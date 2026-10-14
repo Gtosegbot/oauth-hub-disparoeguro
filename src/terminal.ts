@@ -17,7 +17,6 @@
 import type { Server, IncomingMessage } from "http";
 import type { Duplex } from "stream";
 import path from "path";
-import { WebSocketServer, WebSocket } from "ws";
 import { isValidSession } from "./security";
 
 const ENABLED = process.env.DEMO_TERMINAL === "1";
@@ -64,6 +63,15 @@ export function attachTerminal(server: Server, adminAuthEnabled: boolean): void 
     return;
   }
 
+  let WebSocketServer: any;
+  try {
+    // require dinâmico: ws pode não estar instalado em ambientes de produção/build restrito
+    WebSocketServer = require("ws").WebSocketServer;
+  } catch {
+    console.warn("  demo terminal: ws ausente — painel desligado (npm i ws)");
+    return;
+  }
+
   if (!adminAuthEnabled) {
     console.warn("  demo terminal: RECUSADO — exige ADMIN_PASSWORD definido (open mode abriria shell sem senha)");
     return;
@@ -88,10 +96,10 @@ export function attachTerminal(server: Server, adminAuthEnabled: boolean): void 
       socket.destroy();
       return;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+    wss.handleUpgrade(req, socket, head, (ws: any) => wss.emit("connection", ws, req));
   });
 
-  wss.on("connection", (ws: WebSocket) => {
+  wss.on("connection", (ws: any) => {
     let shell: any = null;
     let authed = false;
 
@@ -111,7 +119,7 @@ export function attachTerminal(server: Server, adminAuthEnabled: boolean): void 
       }
     };
 
-    ws.on("message", (raw) => {
+    ws.on("message", (raw: any) => {
       let msg: any;
       try {
         msg = JSON.parse(String(raw));
@@ -137,10 +145,10 @@ export function attachTerminal(server: Server, adminAuthEnabled: boolean): void 
           env: process.env,
         });
         shell.onData((d: string) => {
-          if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "out", data: d }));
+          if (ws.readyState === (ws.OPEN || 1)) ws.send(JSON.stringify({ type: "out", data: d }));
         });
         shell.onExit(() => {
-          if (ws.readyState === ws.OPEN) ws.close(1000, "SHELL_EXIT");
+          if (ws.readyState === (ws.OPEN || 1)) ws.close(1000, "SHELL_EXIT");
           closeShell();
         });
         ws.send(JSON.stringify({ type: "ready", cwd: CWD, shell: file }));
