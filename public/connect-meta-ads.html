@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meta Ads · Disparo Seguro</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="/i18n-data.js"></script>
+  <script src="/i18n.js"></script>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--bg:#08090d;--card:#11131a;--text:#eef2f8;--muted:#7c8798;--border:#1d222e;--accent:#1877f2;--accent-light:#00f2fe;--danger:#ff4d4f}
+    body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:1rem;color:var(--text);background:radial-gradient(760px 440px at 100% -10%,rgba(24,119,242,.18),transparent 60%),radial-gradient(600px 380px at 0% 110%,rgba(0,242,254,.12),transparent 60%),var(--bg)}
+    .box{text-align:center;padding:2.4rem 2rem;max-width:440px;width:100%;background:var(--card);border:1px solid var(--border);border-radius:20px;box-shadow:0 30px 70px -22px rgba(0,0,0,.6)}
+    .meta-logo{width:56px;height:56px;border-radius:14px;background:#0d1117;border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;margin:0 auto 1.2rem;box-shadow:0 10px 24px -8px rgba(24,119,242,.5)}
+    .meta-logo img,.meta-logo svg{width:34px;height:34px}
+    h3{font-size:1.15rem;font-weight:800;letter-spacing:-.02em;margin-bottom:.5rem}
+    p{font-size:.875rem;color:var(--muted);line-height:1.55}
+    .scope-badges{display:flex;justify-content:center;gap:.5rem;margin:1rem 0;flex-wrap:wrap}
+    .badge-pill{font-size:.72rem;padding:.2rem .6rem;background:rgba(24,119,242,.15);color:#00f2fe;border:1px solid rgba(24,119,242,.3);border-radius:20px;font-weight:600}
+    .spinner{width:38px;height:38px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:1.1rem auto 0;display:none}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .error{color:var(--danger);margin-top:1rem;font-size:.85rem;background:rgba(255,77,79,.1);border:1px solid rgba(255,77,79,.3);border-radius:10px;padding:.75rem 1rem;display:none;white-space:pre-line;text-align:left}
+    button{margin-top:1.3rem;padding:.75rem 1.6rem;background:linear-gradient(135deg,#1877f2,#00a8ff);color:#fff;border:none;border-radius:11px;font-size:.9rem;font-weight:800;cursor:pointer;box-shadow:0 12px 26px -10px rgba(24,119,242,.7);transition:transform .12s,filter .15s}
+    button:hover{transform:translateY(-1px);filter:brightness(1.08)}
+    button:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+    .promo-foot{margin-top:1.3rem;font-size:.76rem;color:var(--muted);text-align:center}
+    .promo-foot a{color:var(--accent-light);font-weight:700;text-decoration:none}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="meta-logo">
+      <img src="/assets/meta.svg" alt="Meta Ads" onerror="this.onerror=null;this.src='/assets/brand-icon.png'" />
+    </div>
+    <h3 id="title">Conectar Meta Ads</h3>
+    <p id="msg">Conecte suas contas de anúncios oficiais do Meta Business para sincronizar campanhas e métricas em tempo real.</p>
+    <div class="scope-badges">
+      <span class="badge-pill">ads_read</span>
+      <span class="badge-pill">read_insights</span>
+      <span class="badge-pill">business_management</span>
+    </div>
+    <div class="spinner" id="spinner"></div>
+    <div class="error" id="err"></div>
+    <button id="btn" onclick="startAuth()">Conectar com Meta Ads</button>
+  </div>
+  <div class="promo-foot" id="promoFoot">
+    <span>Hub Disparo Seguro</span> · <span>Integração Oficial Meta Ads</span>
+  </div>
+  <script>
+    var AUTH_URL = '{{AUTH_URL}}';
+    var LANG     = '{{LANG}}';
+    if (window.I18N && LANG) window.I18N.setLang(LANG);
+    function T(k, v){ return window.I18N ? window.I18N.t(k, v) : k; }
+    (function initStatic(){
+      document.title = (T('cpop.metaAds.title') || 'Conectar Meta Ads') + ' · Disparo Seguro';
+      var elTitle = document.getElementById('title'); if (elTitle) elTitle.textContent = T('cpop.metaAds.title') || 'Conectar Meta Ads';
+      var elMsg = document.getElementById('msg'); if (elMsg) elMsg.textContent = T('cpop.metaAds.intro') || 'Autorize o acesso às suas contas de anúncios e campanhas no Meta Business.';
+      var elBtn = document.getElementById('btn'); if (elBtn) elBtn.textContent = T('cpop.metaAds.btn') || 'Conectar com Meta Ads';
+    })();
+    function startAuth(){
+      var btn = document.getElementById('btn');
+      btn.disabled = true;
+      document.getElementById('msg').textContent = T('cpop.metaAds.redirecting') || 'Redirecionando para a Meta…';
+      document.getElementById('spinner').style.display = 'block';
+      if(!AUTH_URL){
+        document.getElementById('spinner').style.display = 'none';
+        var el = document.getElementById('err');
+        el.textContent = T('cpop.metaAds.missingKeys') || 'App ID ou App Secret não configurados. Verifique as credenciais no painel.';
+        el.style.display = 'block';
+        btn.disabled = false;
+        return;
+      }
+      window.location.href = AUTH_URL;
+    }
+  </script>
+</body>
+</html>

@@ -445,11 +445,11 @@ section[id^="tab-"].tab-enter { animation: tabIn .34s var(--ease); }
 /* channel mix */
 .mix-bar { display: flex; height: 10px; border-radius: var(--pill); overflow: hidden; background: var(--surface-2); border: 1px solid var(--border); margin-bottom: .9rem; }
 .mix-seg { height: 100%; }
-.mix-seg.waba { background: var(--waba); } .mix-seg.messenger { background: var(--messenger); } .mix-seg.instagram { background: var(--ig-grad); }
+.mix-seg.waba { background: var(--waba); } .mix-seg.messenger { background: var(--messenger); } .mix-seg.instagram { background: var(--ig-grad); } .mix-seg.tiktok { background: linear-gradient(135deg, #00f2fe, #fe2c55); }
 .mix-legend { display: flex; flex-direction: column; gap: .55rem; }
 .mix-row { display: flex; align-items: center; gap: .55rem; font-size: .82rem; }
 .mix-row .dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
-.mix-row .dot.waba { background: var(--waba); } .mix-row .dot.messenger { background: var(--messenger); } .mix-row .dot.instagram { background: var(--ig-grad); }
+.mix-row .dot.waba { background: var(--waba); } .mix-row .dot.messenger { background: var(--messenger); } .mix-row .dot.instagram { background: var(--ig-grad); } .mix-row .dot.tiktok { background: linear-gradient(135deg, #00f2fe, #fe2c55); }
 .mix-row .mix-name { color: var(--muted); flex: 1; }
 .mix-row .mix-val { font-weight: 750; font-variant-numeric: tabular-nums; }
 
@@ -470,7 +470,7 @@ section[id^="tab-"].tab-enter { animation: tabIn .34s var(--ease); }
 .ticker-row { display: flex; align-items: center; gap: .6rem; padding: .6rem 0; border-bottom: 1px solid var(--hairline); font-size: .82rem; }
 .ticker-row:last-child { border-bottom: none; }
 .ticker-row .tk-rail { width: 3px; align-self: stretch; border-radius: 3px; flex-shrink: 0; }
-.tk-rail.waba { background: var(--waba); } .tk-rail.messenger { background: var(--messenger); } .tk-rail.instagram { background: var(--ig-grad); } .tk-rail.unknown { background: var(--muted-2); }
+.tk-rail.waba { background: var(--waba); } .tk-rail.messenger { background: var(--messenger); } .tk-rail.instagram { background: var(--ig-grad); } .tk-rail.tiktok { background: linear-gradient(135deg, #00f2fe, #fe2c55); } .tk-rail.unknown { background: var(--muted-2); }
 .ticker-row .tk-sum { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
 .ticker-row .tk-app { color: var(--muted-2); font-size: .72rem; }
 .ticker-row .tk-time { color: var(--muted-2); font-size: .72rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -520,12 +520,13 @@ section[id^="tab-"].tab-enter { animation: tabIn .34s var(--ease); }
 }
 .health:hover { box-shadow: var(--sh); border-color: var(--border-strong); transform: translateY(-1px); }
 .health::before { content: ""; position: absolute; left: 0; top: 1rem; bottom: 1rem; width: 3px; border-radius: 0 3px 3px 0; }
-.health.waba::before { background: var(--waba); } .health.messenger::before { background: var(--messenger); } .health.instagram::before { background: var(--ig-grad); }
+.health.waba::before { background: var(--waba); } .health.messenger::before { background: var(--messenger); } .health.instagram::before { background: var(--ig-grad); } .health.tiktok::before { background: linear-gradient(135deg, #00f2fe, #fe2c55); }
 .health-top { display: flex; align-items: center; gap: .7rem; }
 .health-top .ch-avatar { flex-shrink: 0; width: 42px; height: 42px; border-radius: 12px; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 1.05rem; }
 .health-top .ch-avatar::before { content: attr(data-initial); }
 .health-top .ch-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .ch-avatar.waba { background: var(--waba); } .ch-avatar.messenger { background: var(--messenger); } .ch-avatar.instagram { background: var(--ig-grad); }
+.ch-avatar.tiktok { background: #000; border: 1px solid rgba(255,255,255,.15); box-shadow: 0 0 10px rgba(0,242,254,.25); }
 .health-name { flex: 1; min-width: 0; }
 .health-name .nm { font-weight: 700; letter-spacing: -.01em; display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
 .health-name .meta-line { color: var(--muted-2); font-size: .73rem; margin-top: .15rem; font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -548,6 +549,8 @@ section[id^="tab-"].tab-enter { animation: tabIn .34s var(--ease); }
 .badge.waba { background: var(--waba-soft); color: var(--waba-ink); border-color: color-mix(in srgb, var(--waba) 24%, transparent); }
 .badge.messenger { background: var(--messenger-soft); color: var(--messenger-ink); border-color: color-mix(in srgb, var(--messenger) 24%, transparent); }
 .badge.instagram { background: var(--instagram-soft); color: var(--instagram-ink); border-color: color-mix(in srgb, var(--instagram) 24%, transparent); }
+.badge.tiktok { background: rgba(0,242,254,.12); color: #00f2fe; border-color: rgba(0,242,254,.35); }
+:root[data-theme="light"] .badge.tiktok { background: rgba(0,0,0,.06); color: #000; border-color: rgba(254,44,85,.3); }
 .badge.ok { background: var(--ok-soft); color: var(--ok-ink); border-color: var(--ok-border); }
 .badge.warn { background: var(--warn-soft); color: var(--warn-ink); border-color: var(--warn-border); }
 .badge.danger { background: var(--danger-soft); color: var(--danger-ink); border-color: var(--danger-border); }
@@ -620,7 +623,7 @@ section[id^="tab-"].tab-enter { animation: tabIn .34s var(--ease); }
 .event:last-child { border-bottom: none; }
 .event:hover { background: var(--surface-2); }
 .event .ev-rail { grid-row: 1 / -1; width: 3px; align-self: stretch; border-radius: 3px; background: var(--muted-2); }
-.event.event-waba .ev-rail { background: var(--waba); } .event.event-messenger .ev-rail { background: var(--messenger); } .event.event-instagram .ev-rail { background: var(--ig-grad); }
+.event.event-waba .ev-rail { background: var(--waba); } .event.event-messenger .ev-rail { background: var(--messenger); } .event.event-instagram .ev-rail { background: var(--ig-grad); } .event.event-tiktok .ev-rail { background: linear-gradient(135deg, #00f2fe, #fe2c55); }
 .event .ev-time { font-family: var(--mono); font-size: .72rem; color: var(--muted-2); white-space: nowrap; padding-top: .15rem; font-variant-numeric: tabular-nums; }
 .event .ev-main { min-width: 0; }
 .event .ev-head { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin-bottom: .25rem; }
@@ -857,3 +860,14 @@ section[id^="tab-"].tab-enter { animation: tabIn .34s var(--ease); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
+
+/* ── Meta Ads & TikTok Official Theme Disparo Seguro ── */
+.badge.meta_ads { background: rgba(24, 119, 242, 0.15); color: #1877f2; border: 1px solid rgba(24, 119, 242, 0.35); }
+.badge.tiktok { background: rgba(0, 242, 254, 0.12); color: #00f2fe; border: 1px solid rgba(0, 242, 254, 0.3); }
+.health.meta_ads::before { background: #1877f2; }
+.health.tiktok::before { background: linear-gradient(135deg, #00f2fe, #fe2c55); }
+.ch-avatar.meta_ads { background: #1877f2; color: #fff; display: inline-flex; align-items: center; justify-content: center; }
+.ch-avatar.tiktok { background: #000; color: #fff; display: inline-flex; align-items: center; justify-content: center; }
+.connect-pick[data-cd="meta_ads"]:hover { border-color: #1877f2; box-shadow: 0 0 15px rgba(24, 119, 242, 0.3); }
+.connect-pick[data-cd="tiktok"]:hover { border-color: #00f2fe; box-shadow: 0 0 15px rgba(0, 242, 254, 0.25); }
+

@@ -40,8 +40,13 @@ import {
   getGlobalPublicConfig,
   toPublicApp,
   instagramCredsFor,
+  tiktokCredsFor,
+  FB_INSTAGRAM_SCOPES,
+  IG_LOGIN_SCOPES,
   appWebhookUrls,
   appRedirectUri,
+  appTikTokRedirectUri,
+  appMetaAdsRedirectUri,
   seedAppFromEnvIfEmpty,
 } from "./config";
 import {
@@ -55,6 +60,8 @@ import {
 } from "./security";
 import * as store from "./store";
 import * as meta from "./meta";
+import * as tiktok from "./tiktok";
+import * as metaAds from "./meta_ads";
 import * as evidence from "./evidence";
 import { tServer, localesScript, normalizeLang, reloadLocales } from "./i18n";
 import { parseWebhook } from "./webhook-parse";
@@ -80,7 +87,7 @@ const webhookLimiter = rateLimit({ windowMs: 60 * 1000, max: 2000, standardHeade
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 function toPublicChannel(c: Channel): ChannelPublic {
-  const { accessToken: _t, ...rest } = c;
+  const { accessToken: _t, refreshToken: _r, ...rest } = c;
   return { ...rest, appName: store.findApp(c.appId)?.name || "(app removido)" };
 }
 
@@ -220,6 +227,8 @@ app.post("/api/apps", apiLimiter, requireAdmin, (req: Request, res: Response) =>
     instagramAppId: typeof b.instagramAppId === "string" ? b.instagramAppId.trim() : "",
     instagramAppSecret: typeof b.instagramAppSecret === "string" ? b.instagramAppSecret.trim() : "",
     messengerFallbackToken: typeof b.messengerFallbackToken === "string" ? b.messengerFallbackToken.trim() : "",
+    tiktokClientKey: typeof b.tiktokClientKey === "string" ? b.tiktokClientKey.trim() : "",
+    tiktokClientSecret: typeof b.tiktokClientSecret === "string" ? b.tiktokClientSecret.trim() : "",
     webhookVerifyToken: typeof b.webhookVerifyToken === "string" ? b.webhookVerifyToken.trim() : "",
     forwards: sanitizeForwards(b.forwards),
     storeEvents: b.storeEvents !== false,
@@ -242,9 +251,13 @@ app.put("/api/apps/:id", apiLimiter, requireAdmin, (req: Request, res: Response)
   if (typeof b.messengerConfigId === "string") patch.messengerConfigId = b.messengerConfigId.trim();
   if (typeof b.instagramAppId === "string") patch.instagramAppId = b.instagramAppId.trim();
   if (typeof b.webhookVerifyToken === "string") patch.webhookVerifyToken = b.webhookVerifyToken.trim();
+  if (typeof b.tiktokClientKey === "string") patch.tiktokClientKey = b.tiktokClientKey.trim();
   // Secrets/tokens: only overwrite when a non-empty value is sent; "__clear__" wipes it.
   if (typeof b.appSecret === "string" && b.appSecret.trim()) patch.appSecret = b.appSecret.trim();
   if (typeof b.instagramAppSecret === "string" && b.instagramAppSecret.trim()) patch.instagramAppSecret = b.instagramAppSecret.trim();
+  if (typeof b.tiktokClientSecret === "string" && b.tiktokClientSecret.trim()) {
+    patch.tiktokClientSecret = b.tiktokClientSecret.trim() === "__clear__" ? "" : b.tiktokClientSecret.trim();
+  }
   if (typeof b.messengerFallbackToken === "string" && b.messengerFallbackToken.trim()) {
     patch.messengerFallbackToken = b.messengerFallbackToken.trim() === "__clear__" ? "" : b.messengerFallbackToken.trim();
   }
@@ -281,6 +294,45 @@ app.post("/api/channels/:id/refresh", apiLimiter, requireAdmin, async (req: Requ
   const appCfg = store.findApp(ch.appId);
   const apiVersion = appCfg?.apiVersion || DEFAULT_API_VERSION;
   try {
+    if (ch.type === "tiktok") {
+      let accessToken = ch.accessToken;
+      if (ch.refreshToken && appCfg) {
+        const tt = tiktokCredsFor(appCfg);
+        if (tt.isConfigured && ch.expiresAt && new Date(ch.expiresAt).getTime() <= Date.now() + 300000) {
+          const refreshed = await tiktok.refreshTikTokToken(ch.refreshToken, tt.clientKey, tt.clientSecret);
+          if (refreshed.access_token) {
+            accessToken = refreshed.access_token;
+            ch.accessToken = refreshed.access_token;
+            ch.refreshToken = refreshed.refresh_token || ch.refreshToken;
+            ch.expiresAt = new Date(Date.now() + (refreshed.expires_in || 86400) * 1000).toISOString();
+          }
+        }
+      }
+      const canPublish = !!(ch.meta?.can_publish || (ch.meta?.scope && ch.meta.scope.includes("video.publish")));
+      const det = await tiktok.getTikTokChannelDetails(accessToken, canPublish);
+      const newMeta = { ...(ch.meta || {}), avatar: det.avatar || (ch.meta && ch.meta.avatar) || "", details: det.fields };
+      store.upsertChannel({ ...ch, accessToken, meta: newMeta });
+      const updated = store.findChannelById(ch.id);
+      return res.json({ ok: true, channel: updated ? toPublicChannel(updated) : null });
+    }
+
+    if (ch.type === "meta_ads") {
+      const accRes = await metaAds.getMetaAdAccounts(ch.accessToken, apiVersion);
+      const userRes = await metaAds.getMetaUser(ch.accessToken, apiVersion);
+      const accounts = accRes.ok ? accRes.accounts : (ch.meta?.ad_accounts || []);
+      const user = userRes.ok && userRes.user ? userRes.user : { id: ch.externalId, name: ch.meta?.user_name || ch.name };
+      const details = metaAds.formatMetaAdsChannelDetails(user, accounts, Boolean(ch.meta?.can_manage));
+      const newMeta = {
+        ...(ch.meta || {}),
+        user_name: user.name,
+        ad_accounts: accounts,
+        details,
+      };
+      store.upsertChannel({ ...ch, meta: newMeta });
+      const updated = store.findChannelById(ch.id);
+      return res.json({ ok: true, channel: updated ? toPublicChannel(updated) : null });
+    }
+
     const det = await meta.getChannelDetails(ch.type, ch.externalId, ch.meta, ch.accessToken, apiVersion);
     const newMeta = { ...(ch.meta || {}), avatar: det.avatar || (ch.meta && ch.meta.avatar) || "", details: det.fields };
     store.upsertChannel({ ...ch, meta: newMeta });
@@ -381,7 +433,7 @@ app.post("/api/events/clear", apiLimiter, requireAdmin, (_req: Request, res: Res
 
 app.get("/api/stats", apiLimiter, requireAdmin, (_req: Request, res: Response) => {
   const channels = store.listChannels();
-  const byType: Record<string, number> = { waba: 0, messenger: 0, instagram: 0 };
+  const byType: Record<string, number> = { waba: 0, messenger: 0, instagram: 0, tiktok: 0, meta_ads: 0 };
   let subscribed = 0;
   for (const c of channels) {
     byType[c.type] = (byType[c.type] || 0) + 1;
@@ -404,16 +456,44 @@ app.get("/api/stats", apiLimiter, requireAdmin, (_req: Request, res: Response) =
 // ─────────────────────────────────────────────────────────────────────────────
 app.post("/api/connect/:channel/init", apiLimiter, requireAdmin, (req: Request, res: Response) => {
   const channel = req.params.channel as ChannelType;
-  if (!["waba", "messenger", "instagram"].includes(channel)) return res.status(400).json({ error: "INVALID_CHANNEL" });
+  if (!["waba", "messenger", "instagram", "tiktok", "meta_ads"].includes(channel)) return res.status(400).json({ error: "INVALID_CHANNEL" });
   const appId = String((req.body && req.body.appId) || "");
   const appCfg = store.findApp(appId);
   if (!appCfg) return res.status(400).json({ error: "APP_NOT_FOUND", message: "Selecione um app válido." });
+
+  const lang = normalizeLang(req.body && req.body.lang);
+  if (channel === "tiktok") {
+    const tt = tiktokCredsFor(appCfg);
+    if (!tt.isConfigured) {
+      return res.json({
+        ok: false,
+        configured: false,
+        notConfigured: true,
+        message: "Integração aguardando configuração do aplicativo TikTok",
+      });
+    }
+    const state = encodeState(channel, appId, lang);
+    return res.json({ ok: true, configured: true, url: `${PUBLIC_URL}/connect/tiktok?state=${encodeURIComponent(state)}&lang=${lang}` });
+  }
+
+  if (channel === "meta_ads") {
+    if (!appCfg.appId || !appCfg.appSecret) {
+      return res.json({
+        ok: false,
+        configured: false,
+        notConfigured: true,
+        message: "Integração aguardando configuração do aplicativo Meta Ads",
+      });
+    }
+    const state = encodeState(channel, appId, lang);
+    return res.json({ ok: true, configured: true, url: `${PUBLIC_URL}/connect/meta_ads?state=${encodeURIComponent(state)}&lang=${lang}` });
+  }
+
   if (!appCfg.appId || !appCfg.appSecret) {
     return res.status(400).json({ error: "APP_NOT_CONFIGURED", message: "Este app precisa de App ID e App Secret." });
   }
   // Nota: o WhatsApp exige wabaConfigId, mas NÃO bloqueamos aqui — o popup abre e
   // informa o que falta (decisão de UX). Os demais canais não usam config id.
-  const lang = normalizeLang(req.body && req.body.lang);
   const state = encodeState(channel, appId, lang);
   res.json({ url: `${PUBLIC_URL}/connect/${channel}?state=${encodeURIComponent(state)}&lang=${lang}` });
 });
@@ -459,78 +539,438 @@ app.get("/connect/instagram", (req: Request, res: Response) => {
   const { state, app } = appFromState(String(req.query.state || ""));
   const lang = langOf(req, state);
   if (!state || !app) return renderResultPage(res, false, lang, "result.invalidSessionTitle", "result.invalidSessionMsg");
+  if (!app.appId) return renderResultPage(res, false, lang, "result.appNotConfiguredTitle", "result.igAppNotConfigured");
+
   const ig = instagramCredsFor(app);
-  if (!ig.id) return renderResultPage(res, false, lang, "result.appNotConfiguredTitle", "result.igAppNotConfigured");
-  const scopes = ["instagram_business_basic", "instagram_business_manage_messages", "instagram_business_manage_comments"].join(",");
-  const authUrl =
-    "https://www.instagram.com/oauth/authorize" +
-    `?client_id=${encodeURIComponent(ig.id)}` +
-    `&redirect_uri=${encodeURIComponent(appRedirectUri())}` +
-    `&response_type=code` +
-    `&scope=${encodeURIComponent(scopes)}` +
-    `&state=${encodeURIComponent(String(req.query.state || ""))}`;
-  serveTemplate(res, "connect-instagram.html", { AUTH_URL: authUrl, BRAND_NAME: htmlEscape(getBrand()), LANG: lang });
+  const requestedMode = (req.query.mode as string) || "";
+  // If explicitly requested "instagram" and a dedicated Instagram App ID exists, use Instagram Login.
+  // Otherwise, use official Meta / Facebook Login dialog (standard for Meta Business Apps like Disparo Seguro).
+  const isInstagramLogin = requestedMode === "instagram" && ig.isDedicatedIgApp;
+
+  let authUrl = "";
+  if (isInstagramLogin) {
+    authUrl =
+      "https://www.instagram.com/oauth/authorize" +
+      `?client_id=${encodeURIComponent(ig.id)}` +
+      `&redirect_uri=${encodeURIComponent(appRedirectUri())}` +
+      `&response_type=code` +
+      `&scope=${encodeURIComponent(IG_LOGIN_SCOPES.join(","))}` +
+      `&state=${encodeURIComponent(String(req.query.state || ""))}`;
+  } else {
+    // Official Facebook Login for Instagram Professional accounts (Meta Business App 1556368688181124)
+    authUrl =
+      `https://www.facebook.com/${app.apiVersion || DEFAULT_API_VERSION}/dialog/oauth` +
+      `?client_id=${encodeURIComponent(app.appId)}` +
+      `&redirect_uri=${encodeURIComponent(appRedirectUri())}` +
+      `&response_type=code` +
+      `&scope=${encodeURIComponent(FB_INSTAGRAM_SCOPES.join(","))}` +
+      `&state=${encodeURIComponent(String(req.query.state || ""))}`;
+  }
+
+  serveTemplate(res, "connect-instagram.html", {
+    AUTH_URL: authUrl,
+    APP_ID: app.appId,
+    API_VERSION: app.apiVersion || DEFAULT_API_VERSION,
+    STATE: String(req.query.state || ""),
+    BRAND_NAME: htmlEscape(getBrand()),
+    LANG: lang,
+  });
 });
 
 app.get("/connect/instagram/callback", async (req: Request, res: Response) => {
-  const { code, state, error, error_description } = req.query as Record<string, string>;
+  const { code, state, error, error_description, error_message, error_reason } = req.query as Record<string, string>;
   const { state: decoded, app } = appFromState(String(state || ""));
   const lang = langOf(req, decoded);
-  if (error) return renderResultPage(res, false, lang, "result.authDeniedTitle", "result.authDeniedMsg", { detail: error_description || error });
+
+  if (error || error_reason) {
+    const detail = error_description || error_message || error_reason || error;
+    console.warn(`[connect/instagram/callback] OAuth denied by user or Meta: ${detail}`);
+    return renderResultPage(res, false, lang, "result.authDeniedTitle", "result.authDeniedMsg", { detail });
+  }
   if (!decoded || !app) return renderResultPage(res, false, lang, "result.invalidSessionTitle", "result.stateMissingMsg");
   if (!code) return renderResultPage(res, false, lang, "result.codeMissingTitle", "result.codeMissingMsg");
 
   const ig = instagramCredsFor(app);
   try {
-    const result = await meta.exchangeInstagramCode(code, ig.id, ig.secret, appRedirectUri());
-    if (result.error || !result.accessToken) {
-      // Fallback: resolve IG Business accounts linked to the stored token's Pages.
-      if (app.messengerFallbackToken) {
-        const igs = await meta.getInstagramViaToken(app.messengerFallbackToken, app.apiVersion);
-        if (igs.length) {
-          for (const a of igs) {
-            const s = await meta.subscribePageApp(a.page_id, a.page_token, app.apiVersion);
-            store.upsertChannel({
-              id: newId(),
-              appId: app.id,
-              type: "instagram",
-              name: a.username,
-              externalId: a.ig_id,
-              accessToken: a.page_token,
-              meta: { username: a.username, ig_user_id: a.ig_id, page_id: a.page_id, page_name: a.page_name, viaPage: true },
-              subscribed: s.ok,
-              subscribeError: s.ok ? null : s.error,
-              createdAt: new Date().toISOString(),
-              lastEventAt: null,
-            });
-          }
-          console.log(`[connect/instagram] fallback token resolved ${igs.length} account(s) app=${app.id}`);
-          const names = igs.map((a) => a.username).join(", ");
-          return renderResultPage(res, true, lang, "result.igConnectedTitle", "result.igConnectedMsg", { username: names, app: app.name, sub: tServer(lang, "result.subOk") });
+    let connectedAccounts: meta.DiscoveredInstagramAccount[] = [];
+    let grantedPerms: string[] = [];
+    let declinedPerms: string[] = [];
+    let fbExchangeError: string | null = null;
+
+    // 1. Exchange code with Facebook Graph API (Official Meta Login for Business)
+    const tokenRes = await meta.exchangeCodeForToken(code, app.appId, app.appSecret, appRedirectUri(), app.apiVersion);
+
+    if (tokenRes.access_token) {
+      // 1.1 Convert short user token to long-lived token (≈60 days)
+      const longUserToken = await meta.getLongLivedUserToken(tokenRes.access_token, app.appId, app.appSecret, app.apiVersion);
+
+      // 1.2 Inspect granted permissions
+      const perms = await meta.getMePermissions(longUserToken, app.apiVersion);
+      grantedPerms = perms.granted;
+      declinedPerms = perms.declined;
+
+      // 1.3 Discover Instagram Business Accounts attached to the user's Pages
+      const resolution = await meta.resolveInstagramFromUserToken(longUserToken, app.apiVersion);
+      connectedAccounts = resolution.accounts;
+
+      // 1.4 Fallback: try stored fallback token if pages had no IG accounts
+      if (!connectedAccounts.length && app.messengerFallbackToken) {
+        console.log(`[connect/instagram] trying stored fallback token app=${app.id}`);
+        const fallbackIgs = await meta.getInstagramViaToken(app.messengerFallbackToken, app.apiVersion);
+        if (fallbackIgs.length) {
+          connectedAccounts = fallbackIgs;
         }
       }
-      return renderResultPage(res, false, lang, "result.tokenFailTitle", "result.tokenFailMsg");
+
+      // If no accounts could be discovered, report the real cause
+      if (!connectedAccounts.length) {
+        if (declinedPerms.length > 0) {
+          return renderResultPage(res, false, lang, "result.igPermsMissingTitle", "result.igPermsDeclinedMsg", {
+            declined: declinedPerms.join(", "),
+          });
+        }
+        if (!resolution.pagesFound.length) {
+          return renderResultPage(res, false, lang, "result.igNoPagesTitle", "result.igNoPagesMsg");
+        }
+        const pageNames = resolution.pagesFound.map((p) => p.name).join(", ");
+        return renderResultPage(res, false, lang, "result.igNoBusinessLinkedTitle", "result.igNoBusinessLinkedMsg", {
+          pages: pageNames,
+        });
+      }
+    } else {
+      fbExchangeError = tokenRes.error?.message || "token_exchange_failed";
+
+      // 2. If Facebook exchange failed and dedicated Instagram credentials exist, try Instagram Login exchange
+      if (ig.isDedicatedIgApp || ig.secret) {
+        const igResult = await meta.exchangeInstagramCode(code, ig.id, ig.secret, appRedirectUri());
+        if (igResult.accessToken && !igResult.error) {
+          const sub = await meta.subscribeInstagramApp(igResult.accessToken);
+          store.upsertChannel({
+            id: newId(),
+            appId: app.id,
+            type: "instagram",
+            name: `@${igResult.username}`,
+            externalId: igResult.userId,
+            accessToken: igResult.accessToken,
+            meta: {
+              username: igResult.username,
+              ig_user_id: igResult.userId,
+              viaPage: false,
+              permissions: ["instagram_business_basic", "instagram_business_manage_messages", "instagram_business_content_publish"],
+              can_publish: true,
+              details: [
+                { k: "username", v: `@${igResult.username}` },
+                { k: "quality", v: "Pub + Msg" },
+              ],
+            },
+            subscribed: sub.ok,
+            subscribeError: sub.ok ? null : sub.error,
+            createdAt: new Date().toISOString(),
+            lastEventAt: null,
+          });
+          console.log(`[connect/instagram] Instagram Login app=${app.id} ig_user_id=${igResult.userId} subscribed=${sub.ok}`);
+          const subMsg = sub.ok ? tServer(lang, "result.subOk") : tServer(lang, "result.subFail", { err: sub.error || "" });
+          return renderResultPage(res, true, lang, "result.igConnectedTitle", "result.igConnectedMsg", {
+            username: igResult.username,
+            app: app.name,
+            sub: subMsg,
+          });
+        }
+      }
+
+      // Display real Meta error without masking
+      return renderResultPage(res, false, lang, "result.tokenFailTitle", "result.tokenFailDetailMsg", {
+        detail: fbExchangeError,
+      });
     }
-    const sub = await meta.subscribeInstagramApp(result.accessToken);
+
+    // 3. Persist discovered Instagram accounts
+    for (const acc of connectedAccounts) {
+      const sub = await meta.subscribePageApp(acc.page_id, acc.page_token, app.apiVersion);
+      const canPublish = grantedPerms.length ? grantedPerms.includes("instagram_content_publish") : true;
+      const detailsList: Array<{ k: string; v: string }> = [
+        { k: "username", v: `@${acc.username}` },
+        { k: "quality", v: canPublish ? "Pub + Msg" : "Msg" },
+      ];
+      if (acc.followers_count != null) detailsList.push({ k: "followers", v: String(acc.followers_count) });
+      if (acc.media_count != null) detailsList.push({ k: "posts", v: String(acc.media_count) });
+
+      store.upsertChannel({
+        id: newId(),
+        appId: app.id,
+        type: "instagram",
+        name: `@${acc.username}`,
+        externalId: acc.ig_id,
+        accessToken: acc.page_token,
+        meta: {
+          username: acc.username,
+          ig_user_id: acc.ig_id,
+          page_id: acc.page_id,
+          page_name: acc.page_name,
+          viaPage: true,
+          avatar: acc.profile_picture_url || "",
+          account_type: acc.account_type || "BUSINESS",
+          permissions: grantedPerms,
+          can_publish: canPublish,
+          details: detailsList,
+        },
+        subscribed: sub.ok,
+        subscribeError: sub.ok ? null : sub.error,
+        createdAt: new Date().toISOString(),
+        lastEventAt: null,
+      });
+    }
+
+    const names = connectedAccounts.map((a) => a.username).join(", ");
+    console.log(`[connect/instagram] Connected ${connectedAccounts.length} Instagram account(s) app=${app.id}: ${names}`);
+    return renderResultPage(res, true, lang, "result.igConnectedTitle", "result.igConnectedMsg", {
+      username: names,
+      app: app.name,
+      sub: tServer(lang, "result.subOk"),
+    });
+  } catch (err: any) {
+    console.error("[connect/instagram] error:", err?.message || err);
+    return renderResultPage(res, false, lang, "result.unexpectedTitle", "result.unexpectedMsg", {
+      detail: err?.message || String(err),
+    });
+  }
+});
+
+app.get("/connect/tiktok", (req: Request, res: Response) => {
+  const { state, app } = appFromState(String(req.query.state || ""));
+  const lang = langOf(req, state);
+  if (!state || !app) return renderResultPage(res, false, lang, "result.invalidSessionTitle", "result.invalidSessionMsg");
+
+  const tt = tiktokCredsFor(app);
+  if (!tt.isConfigured) {
+    return serveTemplate(res, "connect-tiktok.html", {
+      AUTH_URL: "",
+      CLIENT_KEY: "",
+      STATE: String(req.query.state || ""),
+      BRAND_NAME: htmlEscape(getBrand()),
+      LANG: lang,
+    });
+  }
+
+  const authUrl = tiktok.buildTikTokAuthUrl(tt.clientKey, appTikTokRedirectUri(), String(req.query.state || ""));
+
+  serveTemplate(res, "connect-tiktok.html", {
+    AUTH_URL: authUrl,
+    CLIENT_KEY: tt.clientKey,
+    STATE: String(req.query.state || ""),
+    BRAND_NAME: htmlEscape(getBrand()),
+    LANG: lang,
+  });
+});
+
+app.get("/connect/tiktok/callback", async (req: Request, res: Response) => {
+  const { code, state, error, error_description } = req.query as Record<string, string>;
+  const { state: decoded, app } = appFromState(String(state || ""));
+  const lang = langOf(req, decoded);
+
+  if (error) {
+    const detail = error_description || error;
+    console.warn(`[connect/tiktok/callback] OAuth denied by user or TikTok: ${detail}`);
+    return renderResultPage(res, false, lang, "result.authDeniedTitle", "result.authDeniedMsg", { detail });
+  }
+  if (!decoded || !app) return renderResultPage(res, false, lang, "result.invalidSessionTitle", "result.stateMissingMsg");
+  if (!code) return renderResultPage(res, false, lang, "result.codeMissingTitle", "result.codeMissingMsg");
+
+  const tt = tiktokCredsFor(app);
+  if (!tt.isConfigured) {
+    return renderResultPage(res, false, lang, "result.appNotConfiguredTitle", "result.ttNotConfiguredMsg");
+  }
+
+  try {
+    const tokenRes = await tiktok.exchangeTikTokCode(code, tt.clientKey, tt.clientSecret, appTikTokRedirectUri());
+    if (tokenRes.error || !tokenRes.access_token) {
+      console.error(`[connect/tiktok/callback] Token exchange error: ${tokenRes.error_description || tokenRes.error}`);
+      return renderResultPage(res, false, lang, "result.tokenFailTitle", "result.tokenFailDetailMsg", {
+        detail: tokenRes.error_description || tokenRes.error || "token_exchange_failed",
+      });
+    }
+
+    const userRes = await tiktok.getTikTokUserInfo(tokenRes.access_token);
+    if (!userRes.ok || !userRes.user) {
+      console.error(`[connect/tiktok/callback] User info error: ${userRes.error}`);
+      return renderResultPage(res, false, lang, "result.unexpectedTitle", "result.unexpectedMsg", {
+        detail: userRes.error || "user_info_failed",
+      });
+    }
+    const user = userRes.user;
+
+    const creatorInfo = await tiktok.getTikTokCreatorInfo(tokenRes.access_token);
+    const canPublish = tokenRes.scope.includes("video.publish") && (!creatorInfo.error || creatorInfo.ok);
+
+    const username = user.username || user.display_name || user.open_id;
+
+    const detailsList: Array<{ k: string; v: string }> = [
+      { k: "username", v: `@${username}` },
+      { k: "quality", v: canPublish ? "Vídeo + Info" : "Info (Dev)" },
+    ];
+    if (user.display_name && user.display_name !== username) {
+      detailsList.push({ k: "name", v: user.display_name });
+    }
+
     store.upsertChannel({
       id: newId(),
       appId: app.id,
-      type: "instagram",
-      name: result.username,
-      externalId: result.userId,
-      accessToken: result.accessToken,
-      meta: { username: result.username, ig_user_id: result.userId },
-      subscribed: sub.ok,
-      subscribeError: sub.ok ? null : sub.error,
+      type: "tiktok",
+      name: `@${username}`,
+      externalId: user.open_id,
+      accessToken: tokenRes.access_token,
+      refreshToken: tokenRes.refresh_token,
+      expiresAt: new Date(Date.now() + (tokenRes.expires_in || 86400) * 1000).toISOString(),
+      meta: {
+        open_id: user.open_id,
+        union_id: user.union_id || "",
+        username,
+        display_name: user.display_name,
+        avatar: user.avatar_url || creatorInfo.creator_avatar_url || "",
+        is_verified: user.is_verified,
+        scope: tokenRes.scope,
+        can_publish: canPublish,
+        creator_info: creatorInfo.ok ? creatorInfo : null,
+        details: detailsList,
+      },
+      subscribed: true,
+      subscribeError: null,
       createdAt: new Date().toISOString(),
       lastEventAt: null,
     });
-    console.log(`[connect/instagram] app=${app.id} ig_user_id=${result.userId} subscribed=${sub.ok}`);
-    const subMsg = sub.ok ? tServer(lang, "result.subOk") : tServer(lang, "result.subFail", { err: sub.error || "" });
-    return renderResultPage(res, true, lang, "result.igConnectedTitle", "result.igConnectedMsg", { username: result.username, app: app.name, sub: subMsg });
+
+    console.log(`[connect/tiktok] Connected TikTok account app=${app.id} open_id=${user.open_id} username=@${username}`);
+    return renderResultPage(res, true, lang, "result.ttConnectedTitle", "result.ttConnectedMsg", {
+      username,
+      app: app.name,
+    });
   } catch (err: any) {
-    console.error("[connect/instagram] error:", err?.message || err);
-    return renderResultPage(res, false, lang, "result.unexpectedTitle", "result.unexpectedMsg");
+    console.error("[connect/tiktok/callback] error:", err?.message || err);
+    return renderResultPage(res, false, lang, "result.unexpectedTitle", "result.unexpectedMsg", {
+      detail: err?.message || String(err),
+    });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// META ADS CONNECT & OAUTH CALLBACK
+// ─────────────────────────────────────────────────────────────────────────────
+app.get("/connect/meta_ads", (req: Request, res: Response) => {
+  const { state, app } = appFromState(String(req.query.state || ""));
+  const lang = langOf(req, state);
+  if (!state || !app) return renderResultPage(res, false, lang, "result.invalidSessionTitle", "result.invalidSessionMsg");
+  if (!app.appId || !app.appSecret) {
+    return serveTemplate(res, "connect-meta-ads.html", {
+      AUTH_URL: "",
+      APP_ID: "",
+      STATE: String(req.query.state || ""),
+      BRAND_NAME: htmlEscape(getBrand()),
+      LANG: lang,
+    });
+  }
+
+  const authUrl = metaAds.buildMetaAdsAuthUrl(
+    app.appId,
+    appMetaAdsRedirectUri(),
+    String(req.query.state || ""),
+    app.apiVersion || DEFAULT_API_VERSION,
+    false // ads_management disabled by default until app review
+  );
+
+  serveTemplate(res, "connect-meta-ads.html", {
+    AUTH_URL: authUrl,
+    APP_ID: app.appId,
+    STATE: String(req.query.state || ""),
+    BRAND_NAME: htmlEscape(getBrand()),
+    LANG: lang,
+  });
+});
+
+app.get("/connect/meta_ads/callback", async (req: Request, res: Response) => {
+  const { code, state, error, error_description } = req.query as Record<string, string>;
+  const { state: decoded, app } = appFromState(String(state || ""));
+  const lang = langOf(req, decoded);
+
+  if (error) {
+    const detail = error_description || error;
+    console.warn(`[connect/meta_ads/callback] OAuth denied by user or Meta: ${detail}`);
+    return renderResultPage(res, false, lang, "result.authDeniedTitle", "result.authDeniedMsg", { detail });
+  }
+  if (!decoded || !app) return renderResultPage(res, false, lang, "result.invalidSessionTitle", "result.stateMissingMsg");
+  if (!code) return renderResultPage(res, false, lang, "result.codeMissingTitle", "result.codeMissingMsg");
+
+  try {
+    const tokenRes = await metaAds.exchangeMetaAdsCode(
+      code,
+      app.appId,
+      app.appSecret,
+      appMetaAdsRedirectUri(),
+      app.apiVersion || DEFAULT_API_VERSION
+    );
+
+    if (tokenRes.error || !tokenRes.access_token) {
+      console.error(`[connect/meta_ads/callback] Token exchange error: ${tokenRes.error_description || tokenRes.error}`);
+      return renderResultPage(res, false, lang, "result.tokenFailTitle", "result.tokenFailDetailMsg", {
+        detail: tokenRes.error_description || tokenRes.error || "token_exchange_failed",
+      });
+    }
+
+    const longLived = await metaAds.getMetaAdsLongLivedToken(
+      tokenRes.access_token,
+      app.appId,
+      app.appSecret,
+      app.apiVersion || DEFAULT_API_VERSION
+    );
+    const finalToken = longLived.access_token || tokenRes.access_token;
+
+    const userRes = await metaAds.getMetaUser(finalToken, app.apiVersion || DEFAULT_API_VERSION);
+    const metaUser = userRes.ok && userRes.user ? userRes.user : { id: app.appId, name: "Usuário Meta" };
+
+    const accountsRes = await metaAds.getMetaAdAccounts(finalToken, app.apiVersion || DEFAULT_API_VERSION);
+    if (!accountsRes.ok || !accountsRes.accounts.length) {
+      console.warn(`[connect/meta_ads/callback] No active ad accounts found for user=${metaUser.id}: ${accountsRes.error}`);
+      return renderResultPage(res, false, lang, "result.metaAdsNoAccountsTitle", "result.metaAdsNoAccountsMsg", {
+        detail: accountsRes.error || "no_ad_accounts_found",
+      });
+    }
+
+    const accounts = accountsRes.accounts;
+    const primaryAccount = accounts[0];
+    const detailsList = metaAds.formatMetaAdsChannelDetails(metaUser, accounts, false);
+
+    store.upsertChannel({
+      id: newId(),
+      appId: app.id,
+      type: "meta_ads",
+      name: `Meta Ads · ${primaryAccount.name}`,
+      externalId: primaryAccount.id,
+      accessToken: finalToken,
+      expiresAt: longLived.expires_in ? new Date(Date.now() + longLived.expires_in * 1000).toISOString() : undefined,
+      meta: {
+        user_id: metaUser.id,
+        user_name: metaUser.name,
+        account_id: primaryAccount.account_id,
+        ad_accounts: accounts,
+        can_manage: false,
+        scope: "ads_read,read_insights,business_management",
+        details: detailsList,
+      },
+      subscribed: true,
+      subscribeError: null,
+      createdAt: new Date().toISOString(),
+      lastEventAt: null,
+    });
+
+    console.log(`[connect/meta_ads] Connected Meta Ads app=${app.id} user=${metaUser.name} accounts=${accounts.length}`);
+    return renderResultPage(res, true, lang, "result.metaAdsConnectedTitle", "result.metaAdsConnectedMsg", {
+      account: primaryAccount.name,
+      app: app.name,
+    });
+  } catch (err: any) {
+    console.error("[connect/meta_ads/callback] error:", err?.message || err);
+    return renderResultPage(res, false, lang, "result.unexpectedTitle", "result.unexpectedMsg", {
+      detail: err?.message || String(err),
+    });
   }
 });
 

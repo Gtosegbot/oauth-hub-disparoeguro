@@ -19,7 +19,7 @@
 // Shared types for oauth-hub (multi-app)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type ChannelType = "waba" | "messenger" | "instagram";
+export type ChannelType = "waba" | "messenger" | "instagram" | "tiktok" | "meta_ads";
 export type ForwardProduct = ChannelType | "all";
 
 /** A forward destination ("outro ponto") that webhooks of an app are relayed to. */
@@ -30,7 +30,7 @@ export interface ForwardDest {
   enabled: boolean;
 }
 
-/** A registered Meta app. Each app has its own credentials and webhook routing. */
+/** A registered Meta/Channel app. Each app has its own credentials and webhook routing. */
 export interface MetaApp {
   id: string;                 // internal key, used in the per-app webhook URL path
   name: string;
@@ -42,6 +42,8 @@ export interface MetaApp {
   instagramAppId: string;     // falls back to appId when empty
   instagramAppSecret: string; // falls back to appSecret when empty
   messengerFallbackToken: string; // server-only; System/Page token used to resolve Pages when the Messenger OAuth returns none
+  tiktokClientKey?: string;   // TikTok Login Kit / Content Posting Client Key
+  tiktokClientSecret?: string;// server-only; TikTok Client Secret
   webhookVerifyToken: string;
   forwards: ForwardDest[];
   storeEvents: boolean;       // true = keep history in panel; false = relay-only (no history)
@@ -62,13 +64,14 @@ export interface MetaAppPublic {
   hasAppSecret: boolean;
   hasInstagramAppSecret: boolean;
   hasMessengerFallbackToken: boolean;
+  hasTiktokCredentials?: boolean;
   webhookVerifyTokenSet: boolean;
   forwards: ForwardDest[];
   storeEvents: boolean;
   embedEnabled: boolean;
   channelCount: number;
   createdAt: string;
-  webhookUrls: { unified: string; waba: string; messenger: string; instagram: string };
+  webhookUrls: { unified: string; waba: string; messenger: string; instagram: string; tiktok?: string };
   redirectUri: string;
 }
 
@@ -84,8 +87,10 @@ export interface Channel {
   appId: string;            // which app this channel was connected through
   type: ChannelType;
   name: string;
-  externalId: string;       // phone_number_id | page_id | ig_user_id
+  externalId: string;       // phone_number_id | page_id | ig_user_id | tiktok open_id
   accessToken: string;      // server-only
+  refreshToken?: string;    // server-only; for token renewal (TikTok)
+  expiresAt?: string;       // ISO date when accessToken expires
   meta: Record<string, any>;
   subscribed: boolean;
   subscribeError?: string | null;

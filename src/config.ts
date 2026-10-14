@@ -88,15 +88,54 @@ export function appRedirectUri(): string {
   return `${PUBLIC_URL}/connect/instagram/callback`;
 }
 
-export function instagramCredsFor(app: MetaApp): { id: string; secret: string } {
+export function appTikTokRedirectUri(): string {
+  return `${PUBLIC_URL}/connect/tiktok/callback`;
+}
+
+export function appMetaAdsRedirectUri(): string {
+  return `${PUBLIC_URL}/connect/meta_ads/callback`;
+}
+
+export function instagramCredsFor(app: MetaApp): { id: string; secret: string; isDedicatedIgApp: boolean } {
+  const hasDedicated = !!(app.instagramAppId && app.instagramAppId.trim() && app.instagramAppId.trim() !== app.appId.trim());
   return {
-    id: app.instagramAppId || app.appId,
-    secret: app.instagramAppSecret || app.appSecret,
+    id: hasDedicated ? app.instagramAppId.trim() : app.appId,
+    secret: (hasDedicated && app.instagramAppSecret) ? app.instagramAppSecret.trim() : app.appSecret,
+    isDedicatedIgApp: hasDedicated,
   };
 }
 
+export function tiktokCredsFor(app: MetaApp): { clientKey: string; clientSecret: string; isConfigured: boolean } {
+  const clientKey = (app.tiktokClientKey || env("TIKTOK_CLIENT_KEY") || "").trim();
+  const clientSecret = (app.tiktokClientSecret || env("TIKTOK_CLIENT_SECRET") || "").trim();
+  return {
+    clientKey,
+    clientSecret,
+    isConfigured: !!(clientKey && clientSecret),
+  };
+}
+
+export const FB_INSTAGRAM_SCOPES = [
+  "instagram_basic",
+  "instagram_manage_messages",
+  "instagram_manage_comments",
+  "instagram_content_publish",
+  "pages_show_list",
+  "pages_read_engagement",
+  "pages_manage_metadata",
+  "business_management",
+];
+
+export const IG_LOGIN_SCOPES = [
+  "instagram_business_basic",
+  "instagram_business_manage_messages",
+  "instagram_business_manage_comments",
+  "instagram_business_content_publish",
+];
+
 export function toPublicApp(app: MetaApp): MetaAppPublic {
   const ig = instagramCredsFor(app);
+  const tt = tiktokCredsFor(app);
   return {
     id: app.id,
     name: app.name,
@@ -108,6 +147,7 @@ export function toPublicApp(app: MetaApp): MetaAppPublic {
     hasAppSecret: !!app.appSecret,
     hasInstagramAppSecret: !!app.instagramAppSecret,
     hasMessengerFallbackToken: !!app.messengerFallbackToken,
+    hasTiktokCredentials: tt.isConfigured,
     webhookVerifyTokenSet: !!app.webhookVerifyToken,
     forwards: app.forwards || [],
     storeEvents: app.storeEvents !== false,

@@ -25,7 +25,7 @@
   function t(k, v) { return window.I18N ? window.I18N.t(k, v) : k; }
   function hasKey(k) { return window.I18N && window.I18N.t(k) !== k; }
 
-  var CH_NAME = { waba: "WhatsApp", messenger: "Messenger", instagram: "Instagram" };
+  var CH_NAME = { waba: "WhatsApp", messenger: "Messenger", instagram: "Instagram", tiktok: "TikTok", meta_ads: "Meta Ads" };
   function chName(p) { return CH_NAME[p] || p; }
   function prodLabel(p) { return p === "all" ? t("form.prodAll") : chName(p); }
 
@@ -464,8 +464,8 @@
     sel.value = cur;
   }
 
-  var CH_COLOR = { waba: "#1faa53", messenger: "#0084FF", instagram: "#E1306C" };
-  var CH_IMG = { waba: "/assets/waba.png", messenger: "/assets/messenger.png", instagram: "/assets/instagram.png" };
+  var CH_COLOR = { waba: "#1faa53", messenger: "#0084FF", instagram: "#E1306C", tiktok: "#00f2fe", meta_ads: "#1877f2" };
+  var CH_IMG = { waba: "/assets/waba.png", messenger: "/assets/messenger.png", instagram: "/assets/instagram.png", tiktok: "/assets/tiktok.svg", meta_ads: "/assets/meta.svg" };
   function embedUrl(appId, channel) { return publicUrl + "/embed/connect?app=" + encodeURIComponent(appId) + "&channel=" + channel + "&lang=" + (window.I18N ? window.I18N.getLang() : "pt"); }
   function embedSnippet(appId, channel) {
     var url = embedUrl(appId, channel);
@@ -598,6 +598,8 @@
       '<div class="grid2">' + field("afVerify", "form.verifyToken", null, verifyPh) + field("afWaba", "form.wabaConfig", app.wabaConfigId || "", "form.wabaConfigPh") + "</div>" +
       '<div class="grid2">' + field("afMsgr", "form.msgrConfig", app.messengerConfigId || "", "form.msgrConfigPh") + field("afIgId", "form.igId", app.instagramAppId || "", "form.igIdPh", null, ' <span class="hint">' + esc(t("form.optional")) + "</span>") + "</div>" +
       field("afIgSecret", "form.igSecret", null, igSecPh, "password") +
+      '<div class="grid2">' + field("afTiktokKey", "form.tiktokKey", app.tiktokClientKey || "", "form.tiktokKeyPh", null, ' <span class="hint">' + esc(t("form.optional")) + "</span>") +
+        field("afTiktokSecret", "form.tiktokSecret", null, app.hasTiktokCredentials ? "form.secretKeep" : "form.tiktokSecretPh", "password", ' <span class="hint">' + esc(t("form.optional")) + "</span>") + "</div>" +
       '<div class="field"><label for="afMsgrToken">' + esc(t("form.fallbackToken")) + ' <span class="hint">' + esc(t("form.optional")) + "</span></label>" +
         '<input id="afMsgrToken" placeholder="' + escAttr(t(app.hasMessengerFallbackToken ? "form.secretKeep" : "form.fallbackTokenPh")) + '" />' +
         '<div class="hint">' + esc(t("form.fallbackTokenHint")) + "</div></div>" +
@@ -649,6 +651,8 @@
     var embedEl = $("afEmbed"); if (embedEl) body.embedEnabled = embedEl.checked;
     if ($("afAppSecret").value) body.appSecret = $("afAppSecret").value;
     if ($("afIgSecret").value) body.instagramAppSecret = $("afIgSecret").value;
+    if ($("afTiktokKey") && $("afTiktokKey").value.trim()) body.tiktokClientKey = $("afTiktokKey").value.trim();
+    if ($("afTiktokSecret") && $("afTiktokSecret").value) body.tiktokClientSecret = $("afTiktokSecret").value.trim();
     if ($("afMsgrToken") && $("afMsgrToken").value.trim()) body.messengerFallbackToken = $("afMsgrToken").value.trim();
     if ($("afVerify").value) body.webhookVerifyToken = $("afVerify").value;
     if (!body.name.trim()) { toast(t("form.nameRequired"), true); return; }
@@ -700,11 +704,32 @@
       var last = c.lastEventAt
         ? t("channels.lastEvent", { t: '<span title="' + escAttr(fmtAbs(c.lastEventAt)) + '">' + esc(timeAgo(c.lastEventAt)) + "</span>" })
         : esc(t("channels.noEvents"));
+      var permBadge = "";
+      if (c.type === "instagram") {
+        if (c.meta && c.meta.can_publish) {
+          permBadge = ' <span class="badge ok" title="' + escAttr(t("channels.permPublishTitle")) + '">' + esc(t("channels.permPublish")) + "</span>";
+        } else if (c.meta && c.meta.can_manage_messages) {
+          permBadge = ' <span class="badge neutral" title="' + escAttr(t("channels.permMessagesTitle")) + '">' + esc(t("channels.permMessages")) + "</span>";
+        }
+      } else if (c.type === "tiktok") {
+        if (c.meta && c.meta.can_publish) {
+          permBadge = ' <span class="badge ok" title="' + escAttr(t("channels.tiktokPublishTitle")) + '">' + esc(t("channels.tiktokPublishOk")) + "</span>";
+        } else {
+          permBadge = ' <span class="badge warn" title="' + escAttr(t("channels.tiktokPublishDevTitle")) + '">' + esc(t("channels.tiktokPublishDev")) + "</span>";
+        }
+      } else if (c.type === "meta_ads") {
+        if (c.meta && c.meta.can_manage) {
+          permBadge = ' <span class="badge ok" title="' + escAttr(t("channels.metaAdsManageTitle")) + '">' + esc(t("channels.metaAdsManage")) + "</span>";
+        } else {
+          permBadge = ' <span class="badge neutral" title="' + escAttr(t("channels.metaAdsReadTitle")) + '">' + esc(t("channels.metaAdsRead")) + "</span>";
+        }
+      }
       return '<div class="health ' + esc(c.type) + '">' +
           '<div class="health-top">' + chAvatar(c) +
-            '<div class="health-name"><div class="nm">' + esc(c.name) + ' <span class="badge ' + c.type + '">' + esc(chName(c.type)) + "</span></div>" +
+            '<div class="health-name"><div class="nm">' + esc(c.name) + ' <span class="badge ' + c.type + '">' + esc(chName(c.type)) + "</span>" + permBadge + "</div>" +
               '<div class="meta-line" title="' + escAttr(t("channels.idPrefix") + ": " + c.externalId + " · " + t("channels.appPrefix") + ": " + c.appName) + '">' + esc(c.externalId) + " · " + esc(c.appName) + "</div></div>" +
             '<div class="health-actions">' +
+              '<button class="btn secondary tiny" data-reconnect="' + escAttr(c.id) + '" data-type="' + escAttr(c.type) + '" data-app="' + escAttr(c.appId) + '" title="' + escAttr(t("channels.reconnectTitle")) + '">' + esc(t("channels.reconnect")) + "</button>" +
               '<button class="btn ghost icon-btn tiny" data-refresh="' + escAttr(c.id) + '" title="' + escAttr(t("channels.refresh")) + '">' + icon("refresh") + "</button>" +
               '<button class="btn danger tiny" data-del="' + escAttr(c.id) + '">' + esc(t("channels.remove")) + "</button>" +
             "</div>" +
@@ -721,6 +746,13 @@
             .then(function () { toast(t("channels.removed")); loadChannels(); loadApps(); loadStats(); })
             .catch(function (e) { toast(e.message, true); });
         });
+      });
+    });
+    Array.prototype.forEach.call(el.querySelectorAll("[data-reconnect]"), function (btn) {
+      btn.addEventListener("click", function () {
+        var chType = btn.getAttribute("data-type");
+        var appId = btn.getAttribute("data-app");
+        connect(chType, appId);
       });
     });
     Array.prototype.forEach.call(el.querySelectorAll("[data-refresh]"), function (btn) {
@@ -743,9 +775,12 @@
   }
 
   // ── Connect drawer ─────────────────────────────────────────
-  function connectPick(ch) {
-    return '<button class="connect-pick" data-cd="' + ch + '"><img class="ch-logo" src="/assets/' + ch + '.png" alt="" />' +
-      '<span class="cp-txt"><span>' + esc(t("connect." + ch)) + "</span><small>" + esc(t("connect." + ch + "Sub")) + "</small></span></button>";
+  function connectPick(ch, customTitle, customSub) {
+    var title = customTitle || t("connect." + ch);
+    var sub = customSub || t("connect." + ch + "Sub");
+    var logoSrc = ch === "tiktok" ? "/assets/tiktok.svg" : (ch === "meta_ads" ? "/assets/meta.svg" : "/assets/" + ch + ".png");
+    return '<button class="connect-pick" data-cd="' + ch + '"><img class="ch-logo" src="' + logoSrc + '" alt="" onerror="this.src=\'/assets/\' + ch + \'.svg\'" />' +
+      '<span class="cp-txt"><span>' + esc(title) + "</span><small>" + esc(sub) + "</small></span></button>";
   }
   function openConnectDrawer() {
     closeDrawer();
@@ -755,9 +790,21 @@
       inner = '<div class="drawer-intro">' + t("connect.noApps") + "</div><button class=\"btn\" id=\"cdNewApp\">" + esc(t("onboarding.cta")) + "</button>";
     } else {
       var opts = appsCache.map(function (a) { return '<option value="' + escAttr(a.id) + '">' + esc(a.name) + "</option>"; }).join("");
+      var hasTikTok = chList.some(function (c) { return c.type === "tiktok"; });
+      var ttTitle = hasTikTok ? t("connect.tiktokAnother") : t("connect.tiktok");
+      var ttSub = hasTikTok ? t("connect.tiktokAnotherSub") : t("connect.tiktokSub");
+      var hasMetaAds = chList.some(function (c) { return c.type === "meta_ads"; });
+      var adsTitle = hasMetaAds ? t("connect.metaAdsAnother") : t("connect.metaAds");
+      var adsSub = hasMetaAds ? t("connect.metaAdsAnotherSub") : t("connect.metaAdsSub");
       inner = '<div class="drawer-intro">' + esc(t("connect.desc")) + "</div>" +
         '<div class="field"><label for="cdApp">' + esc(t("connect.appLabel")) + '</label><select id="cdApp">' + opts + "</select></div>" +
-        '<div class="connect-grid">' + connectPick("waba") + connectPick("instagram") + connectPick("messenger") + "</div>";
+        '<div class="connect-grid">' +
+          connectPick("waba") +
+          connectPick("instagram") +
+          connectPick("messenger") +
+          connectPick("tiktok", ttTitle, ttSub) +
+          connectPick("meta_ads", adsTitle, adsSub) +
+        "</div>";
     }
     var ov = document.createElement("div"); ov.className = "drawer-overlay";
     ov.innerHTML =
@@ -779,8 +826,25 @@
   function connect(channel, appId) {
     if (!appId) { toast(t("connect.needApp"), true); return; }
     api("/api/connect/" + channel + "/init", { method: "POST", body: { appId: appId, lang: window.I18N ? window.I18N.getLang() : "pt" } })
-      .then(function (d) { var w = window.open(d.url, "hub_connect", "width=560,height=740"); if (!w) toast(t("connect.popupBlocked"), true); else closeDrawer(); })
-      .catch(function (e) { toast(e.message, true); });
+      .then(function (d) {
+        if (d && (d.notConfigured || d.configured === false || d.ok === false)) {
+          toast(d.message || ("Integração aguardando configuração do aplicativo " + (channel === "tiktok" ? "TikTok" : (channel === "meta_ads" ? "Meta Ads" : channel))), false);
+          return;
+        }
+        if (!d || !d.url) { toast(t("connect.notCompleted"), true); return; }
+        var w = window.open(d.url, "hub_connect", "width=560,height=740");
+        if (!w) toast(t("connect.popupBlocked"), true);
+        else closeDrawer();
+      })
+      .catch(function (e) {
+        if (channel === "tiktok" && (e.message.indexOf("TIKTOK") >= 0 || e.message.indexOf("TikTok") >= 0)) {
+          toast("Integração aguardando configuração do aplicativo TikTok", false);
+        } else if (channel === "meta_ads" && (e.message.indexOf("Meta") >= 0 || e.message.indexOf("APP_NOT_CONFIGURED") >= 0)) {
+          toast("Integração aguardando configuração do aplicativo Meta Ads", false);
+        } else {
+          toast(e.message, true);
+        }
+      });
   }
   window.addEventListener("message", function (e) {
     if (e.origin !== window.location.origin) return;

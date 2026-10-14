@@ -71,7 +71,7 @@ export function encodeState(channel: ChannelType, appId: string, lang: string): 
 export function decodeState(token: string): OAuthState | null {
   const data = verifyToken<OAuthState>(token, STATE_TTL_MS);
   if (!data) return null;
-  if (data.channel !== "waba" && data.channel !== "messenger" && data.channel !== "instagram") return null;
+  if (!["waba", "messenger", "instagram", "tiktok", "meta_ads"].includes(data.channel)) return null;
   if (!data.appId || typeof data.appId !== "string") return null;
   return { channel: data.channel, appId: data.appId, lang: data.lang || "pt", nonce: data.nonce, iat: data.iat };
 }
