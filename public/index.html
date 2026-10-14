@@ -10,6 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/assets/xterm/xterm.css" />
 </head>
 <body>
 
@@ -39,8 +40,10 @@
       <p class="wc-lead" data-i18n="welcome.lead">Conecte WhatsApp Business, Messenger e Instagram e acompanhe os webhooks em tempo real.</p>
       <div class="wc-channels">
         <span class="wc-ch"><img src="/assets/waba.png" alt="" /> WhatsApp</span>
-        <span class="wc-ch"><img src="/assets/messenger.png" alt="" /> Messenger</span>
         <span class="wc-ch"><img src="/assets/instagram.png" alt="" /> Instagram</span>
+        <span class="wc-ch"><img src="/assets/messenger.png" alt="" /> Messenger</span>
+        <span class="wc-ch"><img src="/assets/tiktok.svg" alt="" /> TikTok</span>
+        <span class="wc-ch"><img src="/assets/meta.svg" alt="" /> Meta Ads</span>
       </div>
       <div class="wc-actions">
         <a class="btn yt" id="welcomeSubscribe" href="https://www.youtube.com/channel/UCrPbAoQKz42Gm0mLdWatAEA?sub_confirmation=1" target="_blank" rel="noopener">
@@ -109,6 +112,10 @@
           <button data-tab="evidence" data-i18n-aria="nav.evidence">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
             <span class="lbl" data-i18n="nav.evidence">Evidências</span>
+          </button>
+          <button data-tab="terminal" id="navTerminal" data-i18n-aria="nav.terminal" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+            <span class="lbl" data-i18n="nav.terminal">Terminal</span>
           </button>
         </nav>
 
@@ -405,6 +412,22 @@
             </div>
           </section>
 
+          <section id="tab-terminal" class="tab-content hidden">
+            <div class="card">
+              <h2 data-i18n="terminal.title">Terminal</h2>
+              <div class="desc" data-i18n="terminal.desc"></div>
+              <div class="term-toolbar">
+                <span class="term-dot" id="termDot"></span>
+                <span class="hint" id="termStatus"></span>
+                <span class="term-spacer"></span>
+                <button class="btn secondary tiny" id="termReconnect" data-i18n="terminal.reconnect">Reconectar</button>
+                <button class="btn secondary tiny" id="termClear" data-i18n="terminal.clear">Limpar</button>
+              </div>
+              <div id="termHost" class="term-host"></div>
+              <div class="hint" data-i18n="terminal.warn"></div>
+            </div>
+          </section>
+
           <footer class="app-footer">
             <span id="footerOffered"></span>
             <span class="dot">·</span>
@@ -420,6 +443,8 @@
   <div class="toast" id="toast"></div>
   <script src="/i18n-data.js"></script>
   <script src="/i18n.js"></script>
+  <script src="/assets/xterm/xterm.js"></script>
+  <script src="/assets/xterm/addon-fit.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

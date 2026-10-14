@@ -213,16 +213,23 @@ export async function getPageInstagramAccount(
   pageId: string,
   pageToken: string,
   apiVersion: string
-): Promise<{ id: string; username?: string } | null> {
+): Promise<{
+  id: string;
+  username?: string;
+  name?: string;
+  profile_picture_url?: string;
+  followers_count?: number;
+  media_count?: number;
+} | null> {
   const url = new URL(`${FB_GRAPH}/${apiVersion}/${pageId}`);
-  url.searchParams.set("fields", "instagram_business_account{id,username}");
+  url.searchParams.set("fields", "instagram_business_account{id,username,name,profile_picture_url,followers_count,media_count}");
   url.searchParams.set("access_token", pageToken);
   const data = await getJson(url.toString());
   return data?.instagram_business_account || null;
 }
 
 /**
- * Subscribe the app to a Facebook Page's webhooks (Messenger).
+ * Subscribe the app to a Facebook Page's webhooks (Messenger and Instagram).
  * Returns { ok, error }.
  */
 export async function subscribePageApp(
@@ -242,6 +249,8 @@ export async function subscribePageApp(
       "message_reads",
       "messaging_referrals",
       "messaging_handovers",
+      "feed",
+      "mention",
     ].join(",")
   );
   const r = await fetch(url.toString(), { method: "POST" });
@@ -316,6 +325,59 @@ export async function getWabasViaToken(
   return out;
 }
 
+export interface DiscoveredInstagramAccount {
+  ig_id: string;
+  username: string;
+  name: string;
+  page_id: string;
+  page_name: string;
+  page_token: string;
+  profile_picture_url?: string;
+  followers_count?: number;
+  media_count?: number;
+  account_type?: string;
+}
+
+/**
+ * Discover all Instagram Business Accounts connected to the user's Facebook Pages.
+ */
+export async function resolveInstagramFromUserToken(
+  token: string,
+  apiVersion: string
+): Promise<{
+  accounts: DiscoveredInstagramAccount[];
+  pagesFound: Array<{ id: string; name: string }>;
+  error?: string;
+}> {
+  const { pages, error } = await getUserPages(token, apiVersion);
+  const pagesFound = pages.map((p) => ({ id: p.id, name: p.name }));
+  const accounts: DiscoveredInstagramAccount[] = [];
+
+  for (const p of pages) {
+    try {
+      const iga = await getPageInstagramAccount(p.id, p.access_token, apiVersion);
+      if (iga && iga.id) {
+        accounts.push({
+          ig_id: String(iga.id),
+          username: iga.username || `instagram_${iga.id}`,
+          name: iga.name || iga.username || `instagram_${iga.id}`,
+          page_id: p.id,
+          page_name: p.name,
+          page_token: p.access_token,
+          profile_picture_url: iga.profile_picture_url,
+          followers_count: iga.followers_count,
+          media_count: iga.media_count,
+          account_type: "BUSINESS",
+        });
+      }
+    } catch {
+      /* continue looking through other pages */
+    }
+  }
+
+  return { accounts, pagesFound, error };
+}
+
 /**
  * Discover Instagram Business accounts linked to the token's Pages — fallback for
  * the Instagram connect. Returns the IG account id/username plus the parent Page
@@ -324,18 +386,9 @@ export async function getWabasViaToken(
 export async function getInstagramViaToken(
   token: string,
   apiVersion: string
-): Promise<Array<{ ig_id: string; username: string; page_id: string; page_name: string; page_token: string }>> {
-  const out: Array<{ ig_id: string; username: string; page_id: string; page_name: string; page_token: string }> = [];
-  try {
-    const { pages } = await getUserPages(token, apiVersion);
-    for (const p of pages) {
-      const iga = await getPageInstagramAccount(p.id, p.access_token, apiVersion);
-      if (iga && iga.id) {
-        out.push({ ig_id: String(iga.id), username: iga.username || `instagram_${iga.id}`, page_id: p.id, page_name: p.name, page_token: p.access_token });
-      }
-    }
-  } catch { /* best effort */ }
-  return out;
+): Promise<Array<DiscoveredInstagramAccount>> {
+  const res = await resolveInstagramFromUserToken(token, apiVersion);
+  return res.accounts;
 }
 
 export interface ChannelDetails {
@@ -381,13 +434,15 @@ export async function getChannelDetails(
       }
     } else if (type === "instagram") {
       const d = chMeta?.viaPage
-        ? await getJson(`${base}/${String(chMeta?.ig_user_id || externalId)}?fields=username,profile_picture_url,followers_count,media_count&access_token=${tk}`)
-        : await getJson(`${IG_GRAPH}/me?fields=username,profile_picture_url,followers_count,media_count,account_type&access_token=${tk}`);
+        ? await getJson(`${base}/${String(chMeta?.ig_user_id || externalId)}?fields=username,name,profile_picture_url,followers_count,media_count&access_token=${tk}`)
+        : await getJson(`${IG_GRAPH}/me?fields=username,name,profile_picture_url,followers_count,media_count,account_type&access_token=${tk}`);
       if (d && !d.error) {
         if (d.profile_picture_url) out.avatar = d.profile_picture_url;
         if (d.username) out.fields.push({ k: "username", v: "@" + d.username });
         if (typeof d.followers_count === "number") out.fields.push({ k: "followers", v: String(d.followers_count) });
         if (typeof d.media_count === "number") out.fields.push({ k: "posts", v: String(d.media_count) });
+        const canPub = chMeta?.can_publish !== false;
+        out.fields.push({ k: "quality", v: canPub ? "Pub + Msg" : "Msg" });
       }
     }
   } catch { /* best effort */ }

@@ -871,3 +871,17 @@ section[id^="tab-"].tab-enter { animation: tabIn .34s var(--ease); }
 .connect-pick[data-cd="meta_ads"]:hover { border-color: #1877f2; box-shadow: 0 0 15px rgba(24, 119, 242, 0.3); }
 .connect-pick[data-cd="tiktok"]:hover { border-color: #00f2fe; box-shadow: 0 0 15px rgba(0, 242, 254, 0.25); }
 
+/* ── Terminal de demonstração (DEMO_TERMINAL=1) ────────────────────────────── */
+.term-toolbar { display: flex; align-items: center; gap: .55rem; margin: .9rem 0 .6rem; flex-wrap: wrap; }
+.term-spacer { flex: 1 1 auto; }
+.term-dot { width: 9px; height: 9px; border-radius: 50%; background: #b3383a; flex: none; transition: background .2s ease; }
+.term-dot.on { background: #25d366; box-shadow: 0 0 10px rgba(37, 211, 102, .75); }
+.term-host {
+  height: min(58vh, 520px); min-height: 260px;
+  border: 1px solid var(--line, #26302b); border-radius: 10px;
+  background: #0b0f0d; padding: 10px 12px; overflow: hidden;
+}
+.term-host .xterm { height: 100%; }
+@media (max-width: 720px) { .term-host { height: 46vh; } }
+
+

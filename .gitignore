@@ -8,9 +8,12 @@ dist/
 data/
 
 # Environment / secrets — never commit
-.env
-.env.local
+# .env* pega .env.production / .env.prod / .env.bak; só o exemplo é versionado.
+.env*
+!.env.example
 *.pem
+*.key
+*.p12
 
 # Logs
 *.log
@@ -21,4 +24,5 @@ npm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+.claude/settings.local.json
 *.backup*

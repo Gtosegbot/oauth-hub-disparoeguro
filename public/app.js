@@ -15,7 +15,7 @@
 
   var YT_URL = "https://www.youtube.com/channel/UCrPbAoQKz42Gm0mLdWatAEA";
   var ZP_URL = "https://zpro.zdg.com.br/";
-  var TABS = ["overview", "events", "channels", "apps", "config", "guide", "evidence"];
+  var TABS = ["overview", "events", "channels", "apps", "config", "guide", "evidence", "terminal"];
 
   function $(id) { return document.getElementById(id); }
   function show(el) { el && el.classList.remove("hidden"); }
@@ -40,6 +40,7 @@
     x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
     refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/>',
     check: '<path d="M20 6 9 17l-5-5"/>',
+    terminal: '<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>',
     alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
     search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
     activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
@@ -385,6 +386,7 @@
   function openWelcome() { showWelcome(function () { show($("app")); }); }
 
   var adminAuthEnabled = false;
+  var terminalEnabled = false;
   function proceedEntry() {
     if (!adminAuthEnabled) {
       api("/api/login", { method: "POST", body: { password: "" } })
@@ -400,6 +402,8 @@
     fetch("/api/bootstrap").then(function (r) { return r.json(); }).then(function (d) {
       document.title = d.brandName; $("loginBrand").textContent = d.brandName; $("brandName").textContent = d.brandName;
       adminAuthEnabled = !!d.adminAuthEnabled;
+      terminalEnabled = !!d.terminalEnabled;
+      var navT = $("navTerminal"); if (navT && terminalEnabled) navT.removeAttribute("hidden");
       if (welcomedAlready()) proceedEntry(); else showWelcome(proceedEntry);
     }).catch(function () { show($("login")); });
   }
@@ -982,6 +986,77 @@
   function setSound(on) { soundOn = on; try { localStorage.setItem("hub_sound", on ? "1" : "0"); } catch (e) {} setSoundUI(); if (on) blip(); }
   function setSoundUI() { var b = $("soundToggle"); if (b) { b.innerHTML = icon(soundOn ? "sound" : "soundOff"); b.classList.toggle("active", soundOn); } }
 
+  // ── Terminal de demonstração (só com DEMO_TERMINAL=1) ──────
+  var TERM = { term: null, fit: null, ws: null, ready: false, wired: false };
+  function termStatus(key, on) {
+    var d = $("termDot"); if (d) d.classList.toggle("on", !!on);
+    var s = $("termStatus"); if (s) s.textContent = t(key);
+  }
+  function termInit() {
+    if (TERM.term || !window.Terminal) return;
+    TERM.term = new window.Terminal({
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
+      fontSize: 13, cursorBlink: true, convertEol: true, scrollback: 4000,
+      theme: { background: "#0b0f0d", foreground: "#d7e0da", cursor: "#25d366" }
+    });
+    if (window.FitAddon && window.FitAddon.FitAddon) {
+      TERM.fit = new window.FitAddon.FitAddon();
+      TERM.term.loadAddon(TERM.fit);
+    }
+    TERM.term.open($("termHost"));
+    TERM.term.onData(function (d) {
+      if (TERM.ws && TERM.ws.readyState === 1 && TERM.ready) TERM.ws.send(JSON.stringify({ type: "in", data: d }));
+    });
+    window.addEventListener("resize", termFit);
+  }
+  function termFit() {
+    if (!TERM.fit || !TERM.term) return;
+    try { TERM.fit.fit(); } catch (e) { return; }
+    if (TERM.ws && TERM.ws.readyState === 1 && TERM.ready) {
+      TERM.ws.send(JSON.stringify({ type: "resize", cols: TERM.term.cols, rows: TERM.term.rows }));
+    }
+  }
+  function termConnect() {
+    if (!terminalEnabled) return;
+    termInit();
+    if (!TERM.term) { termStatus("terminal.noLib", false); return; }
+    if (TERM.ws && (TERM.ws.readyState === 0 || TERM.ws.readyState === 1)) return;
+    TERM.ready = false;
+    termStatus("terminal.connecting", false);
+    var ws;
+    try { ws = new WebSocket((location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host + "/ws/terminal"); }
+    catch (e) { termStatus("terminal.closed", false); return; }
+    TERM.ws = ws;
+    ws.onopen = function () {
+      try { TERM.fit && TERM.fit.fit(); } catch (e) {}
+      ws.send(JSON.stringify({ type: "auth", token: token, cols: TERM.term.cols, rows: TERM.term.rows }));
+    };
+    ws.onmessage = function (ev) {
+      var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.type === "ready") { TERM.ready = true; termStatus("terminal.connected", true); termFit(); }
+      else if (m.type === "out") TERM.term.write(m.data);
+    };
+    ws.onclose = function (ev) {
+      TERM.ready = false;
+      termStatus(ev && ev.code === 4003 ? "terminal.denied" : "terminal.closed", false);
+    };
+    ws.onerror = function () { TERM.ready = false; termStatus("terminal.closed", false); };
+  }
+  function termDisconnect() {
+    if (TERM.ws) { try { TERM.ws.close(); } catch (e) {} TERM.ws = null; }
+    TERM.ready = false;
+  }
+  function terminalOnShow() {
+    if (!TERM.wired) {
+      TERM.wired = true;
+      var r = $("termReconnect"); if (r) r.addEventListener("click", function () { termDisconnect(); termConnect(); });
+      var c = $("termClear"); if (c) c.addEventListener("click", function () { if (TERM.term) TERM.term.clear(); });
+    }
+    termConnect();
+    setTimeout(termFit, 60);
+    setTimeout(function () { if (TERM.term) TERM.term.focus(); }, 120);
+  }
+
   // ── Tabs ───────────────────────────────────────────────────
   function activateTab(tab) {
     Array.prototype.forEach.call(document.querySelectorAll("[data-tab]"), function (b) {
@@ -1002,6 +1077,7 @@
     if (tab === "config") loadConfig();
     if (tab === "guide") fillGuideUrls();
     if (tab === "evidence") evidenceOnShow();
+    if (tab === "terminal") terminalOnShow(); else termDisconnect();
     window.scrollTo(0, 0);
   }
   function gotoTab(tab) { activateTab(tab); }
@@ -1015,8 +1091,11 @@
   var CMDK = { open: false, items: [], active: 0 };
   function buildCommands() {
     var cmds = [];
-    var navMap = { overview: "dash", events: "activity", channels: "plug", apps: "grid", config: "sliders", guide: "book", evidence: "check" };
-    TABS.forEach(function (tab) { cmds.push({ group: t("cmdk.navigate"), title: t("nav." + tab), icon: navMap[tab], kw: tab, run: function () { gotoTab(tab); } }); });
+    var navMap = { overview: "dash", events: "activity", channels: "plug", apps: "grid", config: "sliders", guide: "book", evidence: "check", terminal: "terminal" };
+    TABS.forEach(function (tab) {
+      if (tab === "terminal" && !terminalEnabled) return;
+      cmds.push({ group: t("cmdk.navigate"), title: t("nav." + tab), icon: navMap[tab], kw: tab, run: function () { gotoTab(tab); } });
+    });
     cmds.push({ group: t("cmdk.actions"), title: t("connect.cta"), icon: "plug", kw: "conectar connect canal channel", run: function () { gotoTab("channels"); openConnectDrawer(); } });
     cmds.push({ group: t("cmdk.actions"), title: t("apps.new"), icon: "plus", kw: "novo app new", run: function () { gotoTab("apps"); openAppForm(null); } });
     cmds.push({ group: t("cmdk.actions"), title: t("cmdk.toggleTheme"), icon: "moon", kw: "tema theme dark light escuro claro", run: function () { toggleTheme(); } });

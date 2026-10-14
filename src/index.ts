@@ -66,6 +66,7 @@ import * as evidence from "./evidence";
 import { tServer, localesScript, normalizeLang, reloadLocales } from "./i18n";
 import { parseWebhook } from "./webhook-parse";
 import { Channel, ChannelPublic, ChannelType, ForwardDest, ForwardProduct, MetaApp, WebhookEvent } from "./types";
+import { attachTerminal, isTerminalEnabled } from "./terminal";
 
 const app = express();
 
@@ -179,7 +180,7 @@ function sanitizeForwards(input: any): ForwardDest[] {
 // PUBLIC bootstrap + login
 // ─────────────────────────────────────────────────────────────────────────────
 app.get("/api/bootstrap", apiLimiter, (_req: Request, res: Response) => {
-  res.json({ brandName: getBrand(), adminAuthEnabled: !!ADMIN_PASSWORD });
+  res.json({ brandName: getBrand(), adminAuthEnabled: !!ADMIN_PASSWORD, terminalEnabled: isTerminalEnabled() });
 });
 
 app.post("/api/login", loginLimiter, (req: Request, res: Response) => {
@@ -1326,7 +1327,7 @@ app.use("/api", (_req: Request, res: Response) => res.status(404).json({ error: 
 
 seedAppFromEnvIfEmpty(() => newId().slice(0, 10));
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`\n  ${getBrand()} — oauth-hub (multi-app)`);
   console.log(`  listening on :${PORT}`);
   console.log(`  public url:  ${PUBLIC_URL}`);
@@ -1334,3 +1335,5 @@ app.listen(PORT, () => {
   console.log(`  apps:        ${store.listApps().length} registered`);
   console.log(`  per-app webhook: ${PUBLIC_URL}/webhook/app/<appKey>\n`);
 });
+
+attachTerminal(server, !!ADMIN_PASSWORD);
